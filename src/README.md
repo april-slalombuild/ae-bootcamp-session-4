@@ -61,7 +61,9 @@ The application uses a consulting-focused data model:
    - Certifications
    - Availability
 
-All data is currently stored in memory for this learning exercise. In a production environment, this would be backed by a robust database system.
+Capability data is now stored in a local SQLite database with startup schema initialization so registrations survive application restarts.
+
+By default the database lives at `src/data/capabilities.sqlite`. Set the `CAPABILITIES_DB_PATH` environment variable to point the API at a different database file.
 
 ## Future Enhancements
 

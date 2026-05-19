@@ -1,0 +1,1 @@
+"""Slalom capabilities application package."""
