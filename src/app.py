@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 APP_TITLE = "Slalom Capabilities Management API"
 APP_DESCRIPTION = "API for managing consulting capabilities and consultant expertise"
@@ -254,6 +255,55 @@ class CapabilityStore:
             )
             connection.commit()
 
+    def create_capability(
+        self,
+        name: str,
+        description: str,
+        practice_area: str,
+        capacity: int,
+        skill_levels: list[str],
+        certifications: list[str],
+        industry_verticals: list[str],
+    ) -> None:
+        with self._connect() as connection:
+            existing_row = connection.execute(
+                "SELECT 1 FROM capabilities WHERE name = ?",
+                (name,),
+            ).fetchone()
+            if existing_row is not None:
+                raise HTTPException(status_code=400, detail="Capability already exists")
+
+            next_display_order = connection.execute(
+                "SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order FROM capabilities"
+            ).fetchone()["next_order"]
+
+            connection.execute(
+                """
+                INSERT INTO capabilities(
+                    name,
+                    description,
+                    practice_area,
+                    capacity,
+                    skill_levels_json,
+                    certifications_json,
+                    industry_verticals_json,
+                    display_order
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name,
+                    description,
+                    practice_area,
+                    capacity,
+                    json.dumps(skill_levels),
+                    json.dumps(certifications),
+                    json.dumps(industry_verticals),
+                    next_display_order,
+                ),
+            )
+            connection.commit()
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
@@ -316,6 +366,16 @@ def get_default_db_path() -> Path:
     return current_dir / "data" / "capabilities.sqlite"
 
 
+class CapabilityCreateRequest(BaseModel):
+    name: str
+    description: str
+    practice_area: str
+    capacity: int
+    skill_levels: list[str] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+    industry_verticals: list[str] = Field(default_factory=list)
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title=APP_TITLE, description=APP_DESCRIPTION)
     app.mount("/static", StaticFiles(directory=current_dir / "static"), name="static")
@@ -331,6 +391,19 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.get("/capabilities")
     def get_capabilities(request: Request):
         return request.app.state.store.get_capabilities()
+
+    @app.post("/capabilities", status_code=201)
+    def create_capability(capability: CapabilityCreateRequest, request: Request):
+        request.app.state.store.create_capability(
+            name=capability.name,
+            description=capability.description,
+            practice_area=capability.practice_area,
+            capacity=capability.capacity,
+            skill_levels=capability.skill_levels,
+            certifications=capability.certifications,
+            industry_verticals=capability.industry_verticals,
+        )
+        return {"message": f"Created capability space {capability.name}"}
 
     @app.post("/capabilities/{capability_name}/register")
     def register_for_capability(capability_name: str, email: str, request: Request):

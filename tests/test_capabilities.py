@@ -43,3 +43,54 @@ def test_registration_persists_across_app_instances(tmp_path):
     assert capabilities_response.status_code == 200
     capabilities = capabilities_response.json()
     assert consultant_email in capabilities["Cloud Architecture"]["consultants"]
+
+
+def test_create_capability_space_persists_across_app_instances(tmp_path):
+    db_path = tmp_path / "capabilities.sqlite"
+
+    first_app = create_app(db_path)
+    first_client = TestClient(first_app)
+    create_response = first_client.post(
+        "/capabilities",
+        json={
+            "name": "Space Engineering",
+            "description": "Consulting capability for mission operations and aerospace delivery",
+            "practice_area": "Technology",
+            "capacity": 12,
+            "skill_levels": ["Emerging", "Advanced"],
+            "certifications": ["Orbital Planning Professional"],
+            "industry_verticals": ["Aerospace"],
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    second_app = create_app(db_path)
+    second_client = TestClient(second_app)
+    capabilities_response = second_client.get("/capabilities")
+
+    assert capabilities_response.status_code == 200
+    capabilities = capabilities_response.json()
+    assert "Space Engineering" in capabilities
+    assert capabilities["Space Engineering"]["consultants"] == []
+
+
+def test_create_capability_space_rejects_duplicates(tmp_path):
+    app = create_app(tmp_path / "capabilities.sqlite")
+    client = TestClient(app)
+    payload = {
+        "name": "Space Engineering",
+        "description": "Consulting capability for mission operations and aerospace delivery",
+        "practice_area": "Technology",
+        "capacity": 12,
+        "skill_levels": ["Emerging", "Advanced"],
+        "certifications": ["Orbital Planning Professional"],
+        "industry_verticals": ["Aerospace"],
+    }
+
+    first_response = client.post("/capabilities", json=payload)
+    duplicate_response = client.post("/capabilities", json=payload)
+
+    assert first_response.status_code == 201
+    assert duplicate_response.status_code == 400
+    assert duplicate_response.json()["detail"] == "Capability already exists"
